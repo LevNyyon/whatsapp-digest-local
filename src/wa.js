@@ -9,6 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_DIR =
   process.env.WA_SESSION_DIR || path.join(__dirname, '..', '.wa-session');
 
+// Pin the WhatsApp Web version. Without this, whatsapp-web.js often hangs on the
+// post-scan "loading" screen and never fires `ready`. Override with WA_WEB_VERSION
+// if this one goes stale (see github.com/wppconnect-team/wa-version/tree/main/html).
+const WEB_VERSION = process.env.WA_WEB_VERSION || '2.3000.1041001125-alpha';
+const WEB_VERSION_REMOTE = `https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/${WEB_VERSION}.html`;
+
 let client = null;
 let state = 'idle'; // idle | loading | qr | ready | auth_failure
 let lastQr = null; // raw QR string from WhatsApp
@@ -38,22 +44,39 @@ export function ensureClient(onQr) {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
+    webVersionCache: {
+      type: 'remote',
+      remotePath: WEB_VERSION_REMOTE,
+    },
   });
 
+  client.on('loading_screen', (percent, message) =>
+    console.error(`[wa] loading_screen ${percent}% ${message || ''}`)
+  );
+  client.on('change_state', (s) => console.error('[wa] change_state:', s));
   client.on('qr', (qr) => {
+    console.error('[wa] qr received (scan it)');
     lastQr = qr;
     setState('qr');
     if (onQr) onQr(qr);
   });
-  client.on('authenticated', () => setState('loading'));
-  client.on('auth_failure', () => setState('auth_failure'));
+  client.on('authenticated', () => {
+    console.error('[wa] authenticated');
+    setState('loading');
+  });
+  client.on('auth_failure', (m) => {
+    console.error('[wa] auth_failure:', m);
+    setState('auth_failure');
+  });
   client.on('ready', () => {
+    console.error('[wa] ready');
     lastQr = null;
     setState('ready');
     readyWaiters.forEach((fn) => fn());
     readyWaiters = [];
   });
-  client.on('disconnected', () => {
+  client.on('disconnected', (r) => {
+    console.error('[wa] disconnected:', r);
     setState('idle');
   });
 
