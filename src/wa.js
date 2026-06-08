@@ -107,9 +107,24 @@ function requireReady() {
   }
 }
 
+// Race a promise against a timeout so one slow/hanging WhatsApp call can't
+// stall the whole tool invocation (which then looks "stuck" to the user).
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 export async function listChats(limit = 30) {
   requireReady();
-  const chats = await client.getChats();
+  console.error('[wa] listChats: fetching chat list…');
+  const chats = await withTimeout(client.getChats(), 30000, 'getChats');
+  console.error(`[wa] listChats: ${chats.length} chats`);
   return chats
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
     .slice(0, limit)
@@ -126,28 +141,42 @@ export async function listChats(limit = 30) {
 export async function getMessages({
   hours = 24,
   chatName = null,
-  maxChats = 30,
-  perChat = 40,
+  maxChats = 15,
+  perChat = 25,
 } = {}) {
   requireReady();
   const cutoff = Date.now() - hours * 3600 * 1000;
 
-  let chats = await client.getChats();
+  console.error('[wa] getMessages: fetching chat list…');
+  let chats = await withTimeout(client.getChats(), 30000, 'getChats');
+  console.error(`[wa] getMessages: ${chats.length} chats total`);
   chats.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   if (chatName) {
     const needle = chatName.toLowerCase();
-    chats = chats.filter((c) => (c.name || '').toLowerCase().includes(needle));
+    chats = chats
+      .filter((c) => (c.name || '').toLowerCase().includes(needle))
+      .slice(0, maxChats);
   } else {
-    chats = chats.slice(0, maxChats);
+    // Only scan chats active within the window — skip the long tail of stale
+    // chats entirely. This is the main fix for the "stuck" hang.
+    chats = chats
+      .filter((c) => (c.timestamp || 0) * 1000 >= cutoff)
+      .slice(0, maxChats);
   }
+  console.error(`[wa] getMessages: ${chats.length} active chats to scan`);
 
   const out = [];
   for (const chat of chats) {
     let msgs = [];
     try {
-      msgs = await chat.fetchMessages({ limit: perChat });
-    } catch {
+      msgs = await withTimeout(
+        chat.fetchMessages({ limit: perChat }),
+        8000,
+        `fetchMessages(${chat.name || 'chat'})`
+      );
+    } catch (e) {
+      console.error(`[wa] skip "${chat.name || 'chat'}": ${e.message}`);
       continue;
     }
     const recent = msgs
@@ -170,5 +199,6 @@ export async function getMessages({
       });
     }
   }
+  console.error(`[wa] getMessages: done — ${out.length} chats with recent messages`);
   return out;
 }
