@@ -31,17 +31,17 @@ It is the open, minimal core of a much larger operator hub — given away free.
 ## How it works
 
 ```
-Your phone ──link──► WhatsApp helper (one shared local process) ──HTTP──► MCP server(s) ──► Claude
+Your phone ──link──► WhatsApp helper (one shared local process) ──HTTP──► MCP server(s) ──► your AI app
 ```
 
-- A single background **helper** holds one WhatsApp Web session (headless Chromium, like the WhatsApp Web you use in a browser). It listens on a fixed local port and **outlives Claude restarts**, so the session persists — you link once.
-- Claude Desktop starts an **MCP server per chat**; each one is a thin client that forwards to that single helper. Open as many chats as you like — they all share one session, so there are no duplicate logins and no re-scanning.
-- **Claude is the brain.** No extra LLM API key needed — your Claude app does the reasoning.
+- A single background **helper** holds one WhatsApp Web session (headless Chromium, like the WhatsApp Web you use in a browser). It listens on a fixed local port and **outlives app restarts**, so the session persists — you link once.
+- Your MCP client starts an **MCP server per chat/session**; each one is a thin client that forwards to that single helper. Open as many as you like — they all share one session, so there are no duplicate logins and no re-scanning.
+- **Your AI app is the brain.** No extra LLM API key needed — the app's own model does the reasoning.
 
 ## Requirements
 
 - **Node.js 18+**
-- **Claude Desktop**
+- An **MCP client that can run local servers** — Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed, or your own agent. (The steps below use Claude Desktop; see [Works with any MCP client](#works-with-any-mcp-client) for the rest.)
 - A WhatsApp account on your phone
 
 ## Install
@@ -95,6 +95,25 @@ A page opens with a QR code. On your phone: **WhatsApp → Settings → Linked D
 or
 
 > what did I miss in the last 6 hours?
+
+## Works with any MCP client
+
+This is a standard **local MCP server** — not Claude-specific. Anything that can run a local (stdio) MCP server can use it: **Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed**, or your own agent built on an MCP SDK. The model in that app does the digest reasoning, so any capable model works.
+
+Most clients use the same config shape — only the file location differs per app:
+
+```json
+{
+  "mcpServers": {
+    "whatsapp-digest": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/whatsapp-digest-local/src/index.js"]
+    }
+  }
+}
+```
+
+You get the same five tools and the `whatsapp_digest` prompt. The one limit: a **cloud-only client that accepts only remote MCP servers won't work** — the WhatsApp session has to run locally on your machine.
 
 ## The tools (all read-only)
 
