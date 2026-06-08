@@ -1,0 +1,32 @@
+{
+  "manifest_version": "0.3",
+  "name": "whatsapp-digest",
+  "display_name": "WhatsApp Digest",
+  "version": "0.1.0",
+  "description": "A local, read-only assistant that turns your recent WhatsApp chats into a prioritized digest inside Claude.",
+  "long_description": "Connects to your WhatsApp (via WhatsApp Web, running locally on your machine) and exposes your recent messages to Claude as read-only tools. Ask Claude for a digest and it returns a short, prioritized brief: what needs a reply, what's time-sensitive, and what's just FYI. Nothing is sent, and nothing leaves your machine except the message text you ask Claude to read.",
+  "author": {
+    "name": "Nyyon",
+    "url": "https://github.com/LevNyyon/whatsapp-digest-local"
+  },
+  "license": "MIT",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "src/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/src/index.js"]
+    }
+  },
+  "tools": [
+    { "name": "whatsapp_status", "description": "Check whether WhatsApp is linked and ready." },
+    { "name": "link_whatsapp", "description": "Open a local QR page to link WhatsApp from your phone." },
+    { "name": "list_chats", "description": "List recent WhatsApp chats with unread counts." },
+    { "name": "get_messages", "description": "Get WhatsApp messages from the last N hours." }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=18.0.0" }
+  }
+}
