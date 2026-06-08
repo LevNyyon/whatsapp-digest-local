@@ -4,6 +4,9 @@
 // a second one exits on EADDRINUSE. It is spawned detached by the MCP server, so
 // it OUTLIVES Claude Desktop restarts: the session stays linked, no re-scan.
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import QRCode from 'qrcode';
 import {
   ensureClient,
@@ -11,9 +14,11 @@ import {
   getLastQr,
   listChats,
   getMessages,
+  resetClient,
 } from './wa.js';
 
 const PORT = Number(process.env.WA_DAEMON_PORT || 47291);
+const PIDFILE = path.join(os.tmpdir(), `whatsapp-digest-daemon.${PORT}.pid`);
 
 const QR_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
@@ -117,8 +122,13 @@ const server = http.createServer(async (req, res) => {
             chatName: url.searchParams.get('chat') || null,
           })
         );
+      case '/reset':
+        return sendJson(res, 200, await resetClient());
       case '/shutdown':
         sendJson(res, 200, { ok: true });
+        try {
+          fs.rmSync(PIDFILE, { force: true });
+        } catch {}
         return server.close(() => process.exit(0));
       default:
         return sendJson(res, 404, { error: 'not found' });
@@ -139,6 +149,18 @@ server.on('error', (e) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.error(`[daemon] listening on http://localhost:${PORT} (pid ${process.pid})`);
+  try {
+    fs.writeFileSync(PIDFILE, String(process.pid));
+  } catch {}
   // Start WhatsApp immediately so the saved session is restored and held alive.
   ensureClient();
 });
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    try {
+      fs.rmSync(PIDFILE, { force: true });
+    } catch {}
+    process.exit(0);
+  });
+}

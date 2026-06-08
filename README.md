@@ -104,6 +104,9 @@ or
 | `link_whatsapp` | Opens the QR page to link your phone |
 | `list_chats` | Recent chats + unread counts |
 | `get_messages` | Messages from the last N hours (optionally one chat) |
+| `reset_whatsapp` | Force a clean restart of the helper if it ever gets stuck (keeps your login) |
+
+The helper is self-healing: it clears stale browser locks on start (so a crash can't wedge it), and auto-reconnects with backoff if WhatsApp drops. If it ever gets truly stuck, ask Claude to "reset whatsapp".
 
 There is also a built-in **`whatsapp_digest` prompt** and an optional **Skill** (`skill/SKILL.md`) that teach Claude how to format a good brief.
 

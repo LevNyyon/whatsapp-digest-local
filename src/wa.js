@@ -2,12 +2,16 @@
 // Read-only: this module never exposes a send function to the MCP server.
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
+import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_DIR =
   process.env.WA_SESSION_DIR || path.join(__dirname, '..', '.wa-session');
+// The Chromium profile LocalAuth actually launches against.
+const PROFILE_DIR = path.join(SESSION_DIR, 'session');
 
 // Pin the WhatsApp Web version. Without this, whatsapp-web.js often hangs on the
 // post-scan "loading" screen and never fires `ready`. Override with WA_WEB_VERSION
@@ -19,6 +23,9 @@ let client = null;
 let state = 'idle'; // idle | loading | qr | ready | auth_failure
 let lastQr = null; // raw QR string from WhatsApp
 let readyWaiters = [];
+let lastOnQr = null; // remembered QR callback, reused on auto-reconnect
+let reconnectTimer = null;
+let reconnectAttempts = 0;
 
 function setState(s) {
   state = s;
@@ -35,7 +42,9 @@ export function getLastQr() {
 // Lazily create and start the WhatsApp client. Safe to call repeatedly.
 // `onQr` is called with the raw QR string each time WhatsApp issues a new one.
 export function ensureClient(onQr) {
+  if (onQr) lastOnQr = onQr;
   if (client) return client;
+  cleanupProfile();
   setState('loading');
 
   client = new Client({
@@ -58,7 +67,7 @@ export function ensureClient(onQr) {
     console.error('[wa] qr received (scan it)');
     lastQr = qr;
     setState('qr');
-    if (onQr) onQr(qr);
+    if (lastOnQr) lastOnQr(qr);
   });
   client.on('authenticated', () => {
     console.error('[wa] authenticated');
@@ -71,6 +80,7 @@ export function ensureClient(onQr) {
   client.on('ready', () => {
     console.error('[wa] ready');
     lastQr = null;
+    reconnectAttempts = 0;
     setState('ready');
     readyWaiters.forEach((fn) => fn());
     readyWaiters = [];
@@ -78,14 +88,77 @@ export function ensureClient(onQr) {
   client.on('disconnected', (r) => {
     console.error('[wa] disconnected:', r);
     setState('idle');
+    scheduleReconnect();
   });
 
   client.initialize().catch((e) => {
-    setState('idle');
     console.error('[wa] initialize error:', e?.message || e);
+    setState('idle');
+    scheduleReconnect();
   });
 
   return client;
+}
+
+// Before launching, kill any orphaned Chrome still holding our profile and drop
+// stale lock files. A crashed previous run otherwise blocks the launch with
+// "browser is already running". Safe: the daemon is the single owner of this
+// profile, so anything on it now is a leftover.
+function cleanupProfile() {
+  try {
+    if (process.platform !== 'win32') {
+      execFileSync('pkill', ['-f', PROFILE_DIR], { stdio: 'ignore' });
+    }
+  } catch {
+    /* pkill exits non-zero when nothing matches — fine */
+  }
+  for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    try {
+      fs.rmSync(path.join(PROFILE_DIR, f), { force: true });
+    } catch {}
+  }
+}
+
+// If WhatsApp drops, tear down and re-init with backoff instead of going dead.
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  if (reconnectAttempts >= 6) {
+    console.error('[wa] auto-reconnect gave up after 6 tries; use reset to retry');
+    return;
+  }
+  const delay = Math.min(30000, 2000 * 2 ** reconnectAttempts);
+  reconnectAttempts++;
+  console.error(
+    `[wa] auto-reconnect in ${Math.round(delay / 1000)}s (try ${reconnectAttempts})`
+  );
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    await destroyClient();
+    ensureClient();
+  }, delay);
+}
+
+async function destroyClient() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  try {
+    await client?.destroy();
+  } catch {}
+  client = null;
+  lastQr = null;
+  setState('idle');
+}
+
+// Hard reset: tear everything down and start clean. Keeps the saved login,
+// so it reconnects without a re-scan.
+export async function resetClient() {
+  reconnectAttempts = 0;
+  await destroyClient();
+  cleanupProfile();
+  ensureClient();
+  return getState();
 }
 
 export function waitUntilReady(timeoutMs = 90000) {

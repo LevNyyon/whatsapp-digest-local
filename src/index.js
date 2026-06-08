@@ -19,6 +19,7 @@ const daemonPath = path.join(here, 'daemon.js');
 const PORT = Number(process.env.WA_DAEMON_PORT || 47291);
 const BASE = `http://localhost:${PORT}`;
 const LOG = path.join(os.tmpdir(), 'whatsapp-digest-daemon.log');
+const PIDFILE = path.join(os.tmpdir(), `whatsapp-digest-daemon.${PORT}.pid`);
 
 const DIGEST_INSTRUCTIONS = `You are this person's WhatsApp chief of staff. Build a short, prioritized digest of recent WhatsApp activity.
 
@@ -61,6 +62,26 @@ async function callDaemon(pathname, opts) {
   const text = await r.text();
   if (!r.ok) throw new Error(`helper ${pathname} failed: ${text}`);
   return text; // JSON string, passed straight through to Claude
+}
+
+// Stop the helper: ask it to shut down, then hard-kill via the PID file if it's
+// wedged and still answering. Used by the reset tool to guarantee a fresh start.
+async function killDaemon() {
+  try {
+    await fetch(`${BASE}/shutdown`, { signal: AbortSignal.timeout(2000) });
+  } catch {}
+  try {
+    const pid = Number(fs.readFileSync(PIDFILE, 'utf8').trim());
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {}
+    }
+  } catch {}
+  for (let i = 0; i < 12; i++) {
+    if (!(await daemonHealthy())) return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
 }
 
 function openBrowser(url) {
@@ -149,6 +170,23 @@ server.registerTool(
     const qs = new URLSearchParams({ hours: String(hours ?? 24) });
     if (chat) qs.set('chat', chat);
     return { content: [{ type: 'text', text: await callDaemon(`/messages?${qs}`) }] };
+  }
+);
+
+server.registerTool(
+  'reset_whatsapp',
+  {
+    title: 'Reset WhatsApp helper',
+    description:
+      'Force a clean restart of the shared WhatsApp helper if it gets wedged or stops responding. Stops the background helper and starts a fresh one. Your saved login is kept, so no re-scan is needed.',
+    inputSchema: {},
+  },
+  async () => {
+    await killDaemon();
+    const text = await callDaemon('/status'); // respawns a fresh helper
+    return {
+      content: [{ type: 'text', text: `Helper restarted clean.\n${text}` }],
+    };
   }
 );
 
