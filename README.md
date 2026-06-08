@@ -31,11 +31,11 @@ It is the open, minimal core of a much larger operator hub — given away free.
 ## How it works
 
 ```
-Your phone  ──link──►  whatsapp-web.js (local, on your machine)  ──MCP──►  Claude Desktop
+Your phone ──link──► WhatsApp helper (one shared local process) ──HTTP──► MCP server(s) ──► Claude
 ```
 
-- **whatsapp-web.js** drives a headless Chromium running WhatsApp Web — the same thing you use in a browser, automated.
-- A small **MCP server** exposes that session to Claude as four read-only tools.
+- A single background **helper** holds one WhatsApp Web session (headless Chromium, like the WhatsApp Web you use in a browser). It listens on a fixed local port and **outlives Claude restarts**, so the session persists — you link once.
+- Claude Desktop starts an **MCP server per chat**; each one is a thin client that forwards to that single helper. Open as many chats as you like — they all share one session, so there are no duplicate logins and no re-scanning.
 - **Claude is the brain.** No extra LLM API key needed — your Claude app does the reasoning.
 
 ## Requirements
@@ -121,7 +121,9 @@ There is also a built-in **`whatsapp_digest` prompt** and an optional **Skill** 
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `WA_SESSION_DIR` | `./.wa-session` | Where the WhatsApp session is saved |
+| `WA_SESSION_DIR` | `<install>/.wa-session` | Where the WhatsApp session is saved |
+| `WA_DAEMON_PORT` | `47291` | Fixed local port the shared helper listens on |
+| `WA_WEB_VERSION` | pinned | WhatsApp Web version to use (override if it goes stale) |
 
 ## Roadmap
 

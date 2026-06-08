@@ -1,5 +1,5 @@
 // Smoke test: spawn the MCP server and verify it exposes its tools + prompt.
-// Does not touch WhatsApp (the client loads lazily on first link/use).
+// List-only — does not call tools, so it never starts the WhatsApp daemon.
 // Run from anywhere:  node smoke-test.mjs
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,9 +17,6 @@ const tools = (await client.listTools()).tools.map((t) => t.name);
 const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
 console.log('TOOLS:', tools.join(', '));
 console.log('PROMPTS:', prompts.join(', '));
-
-const res = await client.callTool({ name: 'whatsapp_status', arguments: {} });
-console.log('STATUS_RESULT:', res.content[0].text.replace(/\s+/g, ' '));
 
 await client.close();
 console.log('SMOKE_OK');

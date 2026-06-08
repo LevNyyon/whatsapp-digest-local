@@ -120,6 +120,21 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
+// Run async fn over items with at most `limit` in flight at once.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let i = 0;
+  async function worker() {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  const n = Math.min(limit, items.length) || 0;
+  await Promise.all(Array.from({ length: n }, worker));
+  return results;
+}
+
 export async function listChats(limit = 30) {
   requireReady();
   console.error('[wa] listChats: fetching chat list…');
@@ -142,13 +157,13 @@ export async function getMessages({
   hours = 24,
   chatName = null,
   maxChats = 15,
-  perChat = 25,
+  perChat = 20,
 } = {}) {
   requireReady();
   const cutoff = Date.now() - hours * 3600 * 1000;
 
   console.error('[wa] getMessages: fetching chat list…');
-  let chats = await withTimeout(client.getChats(), 30000, 'getChats');
+  let chats = await withTimeout(client.getChats(), 20000, 'getChats');
   console.error(`[wa] getMessages: ${chats.length} chats total`);
   chats.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -159,25 +174,26 @@ export async function getMessages({
       .slice(0, maxChats);
   } else {
     // Only scan chats active within the window — skip the long tail of stale
-    // chats entirely. This is the main fix for the "stuck" hang.
+    // chats entirely.
     chats = chats
       .filter((c) => (c.timestamp || 0) * 1000 >= cutoff)
       .slice(0, maxChats);
   }
-  console.error(`[wa] getMessages: ${chats.length} active chats to scan`);
+  console.error(`[wa] getMessages: ${chats.length} active chats, fetching in parallel…`);
 
-  const out = [];
-  for (const chat of chats) {
-    let msgs = [];
+  // Fetch up to 5 chats concurrently (sequential was the slow part), each
+  // guarded by a short timeout so one slow chat can't hold up the rest.
+  const results = await mapLimit(chats, 5, async (chat) => {
+    let msgs;
     try {
       msgs = await withTimeout(
         chat.fetchMessages({ limit: perChat }),
-        8000,
+        5000,
         `fetchMessages(${chat.name || 'chat'})`
       );
     } catch (e) {
       console.error(`[wa] skip "${chat.name || 'chat'}": ${e.message}`);
-      continue;
+      return null;
     }
     const recent = msgs
       .filter((m) => (m.timestamp || 0) * 1000 >= cutoff)
@@ -189,16 +205,16 @@ export async function getMessages({
         time: new Date((m.timestamp || 0) * 1000).toISOString(),
         fromMe: !!m.fromMe,
       }));
-    if (recent.length) {
-      out.push({
-        chat: chat.name || chat.id?.user || 'Unknown',
-        isGroup: !!chat.isGroup,
-        unread: chat.unreadCount || 0,
-        messageCount: recent.length,
-        messages: recent,
-      });
-    }
-  }
+    if (!recent.length) return null;
+    return {
+      chat: chat.name || chat.id?.user || 'Unknown',
+      isGroup: !!chat.isGroup,
+      unread: chat.unreadCount || 0,
+      messageCount: recent.length,
+      messages: recent,
+    };
+  });
+  const out = results.filter(Boolean);
   console.error(`[wa] getMessages: done — ${out.length} chats with recent messages`);
   return out;
 }
