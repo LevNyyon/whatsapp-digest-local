@@ -13,7 +13,7 @@ const SESSION_DIR =
 // The Chromium profile LocalAuth actually launches against.
 const PROFILE_DIR = path.join(SESSION_DIR, 'session');
 // A small marker we write once linked, so across daemon restarts we know a
-// saved login exists and can reconnect WITHOUT ever showing a QR.
+// saved login exists and can answer "reconnecting, wait" instead of "scan a QR".
 const LINKED_MARKER = path.join(SESSION_DIR, '.linked');
 
 // Pin the WhatsApp Web version. Without this, whatsapp-web.js often hangs on the
@@ -29,9 +29,6 @@ let readyWaiters = [];
 let lastOnQr = null; // remembered QR callback, reused on auto-reconnect
 let reconnectTimer = null;
 let reconnectAttempts = 0;
-let heartbeatTimer = null;
-let deadProbes = 0;
-let reinitPromise = null;
 
 function setState(s) {
   state = s;
@@ -108,7 +105,6 @@ export function ensureClient(onQr) {
     console.error('[wa] ready');
     lastQr = null;
     reconnectAttempts = 0;
-    deadProbes = 0;
     writeMarker();
     setState('ready');
     readyWaiters.forEach((fn) => fn());
@@ -149,7 +145,9 @@ function cleanupProfile() {
   }
 }
 
-// If WhatsApp drops, tear down and re-init with backoff instead of going dead.
+// Reconnect ONLY in response to a real 'disconnected' event or an init failure
+// (never on a guess), with backoff. We never tear down a connection that is
+// actually up.
 function scheduleReconnect() {
   if (reconnectTimer) return;
   if (reconnectAttempts >= 6) {
@@ -181,41 +179,13 @@ async function destroyClient() {
   setState('idle');
 }
 
-// Coalesced clean restart (destroy + relaunch). Keeps the saved login.
-async function reinit() {
-  if (reinitPromise) return reinitPromise;
-  reinitPromise = (async () => {
-    await destroyClient();
-    cleanupProfile();
-    ensureClient();
-  })();
-  try {
-    await reinitPromise;
-  } finally {
-    reinitPromise = null;
-  }
-}
-
-// Hard reset exposed to the MCP layer. Tear down and start clean (login kept).
+// Hard reset exposed to the MCP layer (the reset_whatsapp tool). Last resort.
 export async function resetClient() {
   reconnectAttempts = 0;
   await destroyClient();
   cleanupProfile();
   ensureClient();
   return getState();
-}
-
-// True liveness probe: ask WhatsApp Web for its actual connection state. A
-// state of 'ready' in memory can be stale (e.g., the laptop slept), so we
-// verify before trusting it.
-async function isAlive() {
-  if (!client) return false;
-  try {
-    const s = await withTimeout(client.getState(), 5000, 'getState');
-    return s === 'CONNECTED';
-  } catch {
-    return false;
-  }
 }
 
 export function waitUntilReady(timeoutMs = 90000) {
@@ -229,61 +199,22 @@ export function waitUntilReady(timeoutMs = 90000) {
   });
 }
 
-// The core self-heal. Make the session live and ready, restoring a saved login
-// silently (NO QR). Returns true if ready within the timeout.
-export async function ensureReady(timeoutMs = 30000) {
-  if (state === 'ready') {
-    if (await isAlive()) return true;
-    console.error('[wa] stale ready state, restoring session…');
-    await reinit(); // silently restores the saved login, no QR
-  } else if (state !== 'qr') {
-    ensureClient();
-  }
-  return await waitUntilReady(timeoutMs);
-}
-
+// Gentle gate: if already connected, proceed (we trust it — no probing, no
+// teardown). If not, start/continue connecting (restores a saved login with NO
+// QR) and wait briefly. Only error out if it truly can't get ready.
 async function ensureReadyOrThrow() {
-  const ok = await ensureReady();
+  if (state === 'ready') return;
+  ensureClient();
+  const ok = await waitUntilReady(30000);
   if (ok) return;
   throw new Error(
     hasSavedSession()
-      ? 'WhatsApp is reconnecting (restoring your saved login). Wait a few seconds and call get_messages again. Do NOT reset or re-scan — no QR is needed.'
+      ? 'WhatsApp is reconnecting (restoring your saved login). Wait a few seconds and call get_messages again — no reset or QR needed.'
       : 'WhatsApp is not linked yet. Run link_whatsapp, scan the QR once, then try again.'
   );
 }
 
-// Status with a real liveness check; heals in the background if stale.
-export async function getLiveStatus() {
-  if (state === 'ready' && !(await isAlive())) {
-    reinit(); // heal in the background; don't block the status call
-    return { state: 'loading', hasQr: false, linked: hasSavedSession(), note: 'reconnecting' };
-  }
-  return getState();
-}
-
-// Keep the session alive on its own (e.g., after the machine sleeps), so the
-// first request of the day already finds a live connection.
-export function startHeartbeat() {
-  if (heartbeatTimer) return;
-  heartbeatTimer = setInterval(async () => {
-    try {
-      if (state === 'ready') {
-        if (await isAlive()) deadProbes = 0;
-        else if (++deadProbes >= 2) {
-          deadProbes = 0;
-          console.error('[wa] heartbeat: connection stale, reconnecting');
-          await reinit();
-        }
-      } else if (state === 'idle' && hasSavedSession()) {
-        ensureClient();
-      }
-    } catch {}
-  }, 60000);
-  if (heartbeatTimer.unref) heartbeatTimer.unref();
-}
-
-// Race a promise against a timeout so one slow/hanging WhatsApp call can't
-// stall the whole tool invocation (which then looks "stuck" to the user).
+// Race a promise against a timeout so one slow/hanging call can't stall forever.
 function withTimeout(promise, ms, label) {
   let t;
   const timeout = new Promise((_, reject) => {
@@ -310,10 +241,15 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
+// The first chat query after the session has been idle can be slow (WhatsApp Web
+// re-syncs its store), so give it real headroom before declaring failure. This
+// is what prevents the "helper got wedged" false alarm.
+const GET_CHATS_TIMEOUT = 40000;
+
 export async function listChats(limit = 30) {
   await ensureReadyOrThrow();
   console.error('[wa] listChats: fetching chat list…');
-  const chats = await withTimeout(client.getChats(), 20000, 'getChats');
+  const chats = await withTimeout(client.getChats(), GET_CHATS_TIMEOUT, 'getChats');
   console.error(`[wa] listChats: ${chats.length} chats`);
   return chats
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
@@ -338,7 +274,7 @@ export async function getMessages({
   const cutoff = Date.now() - hours * 3600 * 1000;
 
   console.error('[wa] getMessages: fetching chat list…');
-  let chats = await withTimeout(client.getChats(), 20000, 'getChats');
+  let chats = await withTimeout(client.getChats(), GET_CHATS_TIMEOUT, 'getChats');
   console.error(`[wa] getMessages: ${chats.length} chats total`);
   chats.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 

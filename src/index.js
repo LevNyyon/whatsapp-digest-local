@@ -107,7 +107,7 @@ server.registerTool(
   {
     title: 'WhatsApp status',
     description:
-      'Check the live WhatsApp connection state. If it returns state "loading" with note "reconnecting", the saved login is being restored automatically — just wait a few seconds and call get_messages. Do not reset or re-link in that case.',
+      'Check whether WhatsApp is connected. If state is not "ready" but "linked" is true, the saved login is just reconnecting — wait a few seconds and call get_messages (it reconnects on its own). Do not reset or re-link in that case.',
     inputSchema: {},
   },
   async () => ({ content: [{ type: 'text', text: await callDaemon('/status') }] })
