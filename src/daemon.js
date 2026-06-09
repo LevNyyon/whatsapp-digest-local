@@ -80,6 +80,23 @@ function sendJson(res, code, obj) {
 }
 
 const server = http.createServer(async (req, res) => {
+  // Localhost-only guard: only answer requests that genuinely originate from
+  // this machine. Validate the Host header (defeats DNS rebinding) and reject
+  // cross-site requests via Sec-Fetch-Site (defeats CSRF). Our own Node client
+  // sends neither header (allowed); the in-page QR fetch is same-origin.
+  const host = (req.headers.host || '').toLowerCase();
+  const hostOk =
+    host === `localhost:${PORT}` ||
+    host === `127.0.0.1:${PORT}` ||
+    host === `[::1]:${PORT}`;
+  const site = req.headers['sec-fetch-site'];
+  const crossSite = site && site !== 'same-origin' && site !== 'none';
+  if (!hostOk || crossSite) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'forbidden' }));
+    return;
+  }
+
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
     switch (url.pathname) {

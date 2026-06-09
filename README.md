@@ -147,6 +147,14 @@ There is also a built-in **`whatsapp_digest` prompt** and an optional **Skill** 
 | `WA_DAEMON_PORT` | `47291` | Fixed local port the shared helper listens on |
 | `WA_WEB_VERSION` | pinned | WhatsApp Web version to use (override if it goes stale) |
 
+## Security
+
+The local helper binds to `localhost` and only answers requests that come from your own machine. It validates the `Host` header and rejects cross-site requests, which closes DNS rebinding and CSRF (a malicious web page you visit cannot reach the helper through your browser).
+
+Two things to know:
+- The helper has no password, so any program already running on your machine as you could talk to it. On a personal machine that is the same trust level as your WhatsApp session sitting on disk.
+- That session (`.wa-session`) is your WhatsApp login. It is gitignored and never leaves your machine. Keep it private.
+
 ## Roadmap
 
 - **v2 — auto mode:** a small always-on background process (cron) that builds the digest every morning and sends it to your own WhatsApp number, even when Claude is closed. (Needs an Anthropic API key, since there's no human in the loop.)

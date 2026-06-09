@@ -2,6 +2,11 @@
 
 All notable changes to WhatsApp Digest are documented here.
 
+## [0.1.2] - 2026-06-09
+
+### Security
+- The local helper now validates the `Host` header and rejects cross-site requests. This closes a DNS rebinding vector (a malicious web page could otherwise reach the local daemon through your browser and read messages or the link QR) and CSRF against the control endpoints. The helper only answers requests that genuinely originate from your own machine. Thanks to the community member who flagged it.
+
 ## [0.1.1] - 2026-06-09
 
 ### Fixed
