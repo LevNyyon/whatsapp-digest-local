@@ -11,10 +11,12 @@ import QRCode from 'qrcode';
 import {
   ensureClient,
   getState,
+  getLiveStatus,
   getLastQr,
   listChats,
   getMessages,
   resetClient,
+  startHeartbeat,
 } from './wa.js';
 
 const PORT = Number(process.env.WA_DAEMON_PORT || 47291);
@@ -87,7 +89,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { ok: true, pid: process.pid });
       case '/status':
         return sendJson(res, 200, {
-          ...getState(),
+          ...(await getLiveStatus()),
           qrUrl: `http://localhost:${PORT}/qr`,
         });
       case '/link':
@@ -154,6 +156,8 @@ server.listen(PORT, '127.0.0.1', () => {
   } catch {}
   // Start WhatsApp immediately so the saved session is restored and held alive.
   ensureClient();
+  // Keep it alive across sleeps/idle so the first request of the day just works.
+  startHeartbeat();
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

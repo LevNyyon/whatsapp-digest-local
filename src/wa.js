@@ -12,6 +12,9 @@ const SESSION_DIR =
   process.env.WA_SESSION_DIR || path.join(__dirname, '..', '.wa-session');
 // The Chromium profile LocalAuth actually launches against.
 const PROFILE_DIR = path.join(SESSION_DIR, 'session');
+// A small marker we write once linked, so across daemon restarts we know a
+// saved login exists and can reconnect WITHOUT ever showing a QR.
+const LINKED_MARKER = path.join(SESSION_DIR, '.linked');
 
 // Pin the WhatsApp Web version. Without this, whatsapp-web.js often hangs on the
 // post-scan "loading" screen and never fires `ready`. Override with WA_WEB_VERSION
@@ -26,21 +29,43 @@ let readyWaiters = [];
 let lastOnQr = null; // remembered QR callback, reused on auto-reconnect
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let heartbeatTimer = null;
+let deadProbes = 0;
+let reinitPromise = null;
 
 function setState(s) {
   state = s;
 }
 
 export function getState() {
-  return { state, hasQr: !!lastQr };
+  return { state, hasQr: !!lastQr, linked: hasSavedSession() };
 }
 
 export function getLastQr() {
   return lastQr;
 }
 
+// --- saved-session marker (survives daemon restarts) ---
+function writeMarker() {
+  try {
+    fs.mkdirSync(SESSION_DIR, { recursive: true });
+    fs.writeFileSync(LINKED_MARKER, '1');
+  } catch {}
+}
+function removeMarker() {
+  try {
+    fs.rmSync(LINKED_MARKER, { force: true });
+  } catch {}
+}
+export function hasSavedSession() {
+  try {
+    return fs.existsSync(LINKED_MARKER);
+  } catch {
+    return false;
+  }
+}
+
 // Lazily create and start the WhatsApp client. Safe to call repeatedly.
-// `onQr` is called with the raw QR string each time WhatsApp issues a new one.
 export function ensureClient(onQr) {
   if (onQr) lastOnQr = onQr;
   if (client) return client;
@@ -71,22 +96,28 @@ export function ensureClient(onQr) {
   });
   client.on('authenticated', () => {
     console.error('[wa] authenticated');
+    writeMarker(); // we have a usable login now
     setState('loading');
   });
   client.on('auth_failure', (m) => {
     console.error('[wa] auth_failure:', m);
+    removeMarker(); // saved login is bad -> a real re-link is needed
     setState('auth_failure');
   });
   client.on('ready', () => {
     console.error('[wa] ready');
     lastQr = null;
     reconnectAttempts = 0;
+    deadProbes = 0;
+    writeMarker();
     setState('ready');
     readyWaiters.forEach((fn) => fn());
     readyWaiters = [];
   });
   client.on('disconnected', (r) => {
     console.error('[wa] disconnected:', r);
+    // Only a real logout means the saved login is gone. Other drops are transient.
+    if (r === 'LOGOUT' || r === 'UNPAIRED') removeMarker();
     setState('idle');
     scheduleReconnect();
   });
@@ -102,8 +133,7 @@ export function ensureClient(onQr) {
 
 // Before launching, kill any orphaned Chrome still holding our profile and drop
 // stale lock files. A crashed previous run otherwise blocks the launch with
-// "browser is already running". Safe: the daemon is the single owner of this
-// profile, so anything on it now is a leftover.
+// "browser is already running". Safe: the daemon is the single owner.
 function cleanupProfile() {
   try {
     if (process.platform !== 'win32') {
@@ -151,14 +181,41 @@ async function destroyClient() {
   setState('idle');
 }
 
-// Hard reset: tear everything down and start clean. Keeps the saved login,
-// so it reconnects without a re-scan.
+// Coalesced clean restart (destroy + relaunch). Keeps the saved login.
+async function reinit() {
+  if (reinitPromise) return reinitPromise;
+  reinitPromise = (async () => {
+    await destroyClient();
+    cleanupProfile();
+    ensureClient();
+  })();
+  try {
+    await reinitPromise;
+  } finally {
+    reinitPromise = null;
+  }
+}
+
+// Hard reset exposed to the MCP layer. Tear down and start clean (login kept).
 export async function resetClient() {
   reconnectAttempts = 0;
   await destroyClient();
   cleanupProfile();
   ensureClient();
   return getState();
+}
+
+// True liveness probe: ask WhatsApp Web for its actual connection state. A
+// state of 'ready' in memory can be stale (e.g., the laptop slept), so we
+// verify before trusting it.
+async function isAlive() {
+  if (!client) return false;
+  try {
+    const s = await withTimeout(client.getState(), 5000, 'getState');
+    return s === 'CONNECTED';
+  } catch {
+    return false;
+  }
 }
 
 export function waitUntilReady(timeoutMs = 90000) {
@@ -172,12 +229,57 @@ export function waitUntilReady(timeoutMs = 90000) {
   });
 }
 
-function requireReady() {
-  if (state !== 'ready') {
-    throw new Error(
-      'WhatsApp is not linked yet. Run the link_whatsapp tool, scan the QR, then try again.'
-    );
+// The core self-heal. Make the session live and ready, restoring a saved login
+// silently (NO QR). Returns true if ready within the timeout.
+export async function ensureReady(timeoutMs = 30000) {
+  if (state === 'ready') {
+    if (await isAlive()) return true;
+    console.error('[wa] stale ready state, restoring session…');
+    await reinit(); // silently restores the saved login, no QR
+  } else if (state !== 'qr') {
+    ensureClient();
   }
+  return await waitUntilReady(timeoutMs);
+}
+
+async function ensureReadyOrThrow() {
+  const ok = await ensureReady();
+  if (ok) return;
+  throw new Error(
+    hasSavedSession()
+      ? 'WhatsApp is reconnecting (restoring your saved login). Wait a few seconds and call get_messages again. Do NOT reset or re-scan — no QR is needed.'
+      : 'WhatsApp is not linked yet. Run link_whatsapp, scan the QR once, then try again.'
+  );
+}
+
+// Status with a real liveness check; heals in the background if stale.
+export async function getLiveStatus() {
+  if (state === 'ready' && !(await isAlive())) {
+    reinit(); // heal in the background; don't block the status call
+    return { state: 'loading', hasQr: false, linked: hasSavedSession(), note: 'reconnecting' };
+  }
+  return getState();
+}
+
+// Keep the session alive on its own (e.g., after the machine sleeps), so the
+// first request of the day already finds a live connection.
+export function startHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(async () => {
+    try {
+      if (state === 'ready') {
+        if (await isAlive()) deadProbes = 0;
+        else if (++deadProbes >= 2) {
+          deadProbes = 0;
+          console.error('[wa] heartbeat: connection stale, reconnecting');
+          await reinit();
+        }
+      } else if (state === 'idle' && hasSavedSession()) {
+        ensureClient();
+      }
+    } catch {}
+  }, 60000);
+  if (heartbeatTimer.unref) heartbeatTimer.unref();
 }
 
 // Race a promise against a timeout so one slow/hanging WhatsApp call can't
@@ -209,9 +311,9 @@ async function mapLimit(items, limit, fn) {
 }
 
 export async function listChats(limit = 30) {
-  requireReady();
+  await ensureReadyOrThrow();
   console.error('[wa] listChats: fetching chat list…');
-  const chats = await withTimeout(client.getChats(), 30000, 'getChats');
+  const chats = await withTimeout(client.getChats(), 20000, 'getChats');
   console.error(`[wa] listChats: ${chats.length} chats`);
   return chats
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
@@ -232,7 +334,7 @@ export async function getMessages({
   maxChats = 15,
   perChat = 20,
 } = {}) {
-  requireReady();
+  await ensureReadyOrThrow();
   const cutoff = Date.now() - hours * 3600 * 1000;
 
   console.error('[wa] getMessages: fetching chat list…');
@@ -246,16 +348,12 @@ export async function getMessages({
       .filter((c) => (c.name || '').toLowerCase().includes(needle))
       .slice(0, maxChats);
   } else {
-    // Only scan chats active within the window — skip the long tail of stale
-    // chats entirely.
     chats = chats
       .filter((c) => (c.timestamp || 0) * 1000 >= cutoff)
       .slice(0, maxChats);
   }
   console.error(`[wa] getMessages: ${chats.length} active chats, fetching in parallel…`);
 
-  // Fetch up to 5 chats concurrently (sequential was the slow part), each
-  // guarded by a short timeout so one slow chat can't hold up the rest.
   const results = await mapLimit(chats, 5, async (chat) => {
     let msgs;
     try {

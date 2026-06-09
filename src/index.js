@@ -107,7 +107,7 @@ server.registerTool(
   {
     title: 'WhatsApp status',
     description:
-      'Check whether WhatsApp is linked and ready. Returns the shared session state.',
+      'Check the live WhatsApp connection state. If it returns state "loading" with note "reconnecting", the saved login is being restored automatically — just wait a few seconds and call get_messages. Do not reset or re-link in that case.',
     inputSchema: {},
   },
   async () => ({ content: [{ type: 'text', text: await callDaemon('/status') }] })
@@ -118,7 +118,7 @@ server.registerTool(
   {
     title: 'Link WhatsApp',
     description:
-      'Begin linking WhatsApp. Opens a local QR page (served by the shared helper at a fixed URL). You only ever scan once; the session is reused after that.',
+      'First-time setup only, or after the user logged the device out. Opens a local QR page. Only call this if get_messages explicitly says "not linked yet". If a saved login already exists, the tools reconnect on their own with no QR — do NOT call this just because the session looks idle or asleep.',
     inputSchema: {},
   },
   async () => {
@@ -160,7 +160,7 @@ server.registerTool(
   {
     title: 'Get recent messages',
     description:
-      'Get WhatsApp messages from the last N hours (default 24), optionally filtered to one chat by name fragment. The raw material for a digest.',
+      'Get WhatsApp messages from the last N hours (default 24), optionally filtered to one chat by name fragment. The raw material for a digest. This AUTOMATICALLY reconnects a sleeping or idle session and waits for it — you do NOT need to call reset_whatsapp or link_whatsapp first. If it returns a "reconnecting" message, just call get_messages again in a few seconds.',
     inputSchema: {
       hours: z.number().int().min(1).max(168).optional(),
       chat: z.string().optional(),
@@ -178,7 +178,7 @@ server.registerTool(
   {
     title: 'Reset WhatsApp helper',
     description:
-      'Force a clean restart of the shared WhatsApp helper if it gets wedged or stops responding. Stops the background helper and starts a fresh one. Your saved login is kept, so no re-scan is needed.',
+      'LAST RESORT. Only call this if the user explicitly says it is stuck AFTER get_messages has been retried and still fails. Routine requests reconnect on their own, so do NOT call this for a normal digest. It keeps the saved login (no re-scan).',
     inputSchema: {},
   },
   async () => {
