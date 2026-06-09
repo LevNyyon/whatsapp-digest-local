@@ -152,6 +152,10 @@ There is also a built-in **`whatsapp_digest` prompt** and an optional **Skill** 
 - **v2 — auto mode:** a small always-on background process (cron) that builds the digest every morning and sends it to your own WhatsApp number, even when Claude is closed. (Needs an Anthropic API key, since there's no human in the loop.)
 - **One-click install:** package as a `.dxt` Desktop Extension so install becomes a double-click with no terminal. A current-format `manifest.json` is included.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 [MIT](LICENSE) — free to use, modify, and distribute. Do what you like.

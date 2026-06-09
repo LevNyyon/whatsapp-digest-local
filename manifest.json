@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "whatsapp-digest",
   "display_name": "WhatsApp Digest",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local, read-only assistant that turns your recent WhatsApp chats into a prioritized digest inside Claude.",
   "long_description": "Connects to your WhatsApp (via WhatsApp Web, running locally on your machine) and exposes your recent messages to Claude as read-only tools. Ask Claude for a digest and it returns a short, prioritized brief: what needs a reply, what's time-sensitive, and what's just FYI. Nothing is sent, and nothing leaves your machine except the message text you ask Claude to read.",
   "author": {

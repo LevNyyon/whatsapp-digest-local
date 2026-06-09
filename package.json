@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-digest",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local MCP server that connects your WhatsApp and turns recent chats into a prioritized digest inside Claude. Read-only, runs entirely on your machine.",
   "type": "module",
   "bin": {
