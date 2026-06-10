@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The single "owner" process. It holds the one WhatsApp session and serves it
-// over a FIXED localhost port. Only one daemon can run — it binds the port, and
+// over a FIXED localhost port. Only one daemon can run, it binds the port, and
 // a second one exits on EADDRINUSE. It is spawned detached by the MCP server, so
 // it OUTLIVES Claude Desktop restarts: the session stays linked, no re-scan.
 import http from 'node:http';
@@ -24,7 +24,7 @@ const PIDFILE = path.join(os.tmpdir(), `whatsapp-digest-daemon.${PORT}.pid`);
 const QR_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Link WhatsApp — WhatsApp Digest</title>
+<title>Link WhatsApp, WhatsApp Digest</title>
 <style>
   :root { color-scheme: light; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -169,7 +169,7 @@ const server = http.createServer(async (req, res) => {
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    console.error(`[daemon] port ${PORT} already in use — another daemon owns the session. Exiting.`);
+    console.error(`[daemon] port ${PORT} already in use, another daemon owns the session. Exiting.`);
     process.exit(0);
   }
   console.error('[daemon] server error:', e?.message || e);

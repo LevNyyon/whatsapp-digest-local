@@ -33,14 +33,14 @@ It is the open, minimal core of a much larger operator hub, given away free.
 Your phone ──link──► WhatsApp helper (one shared local process) ──HTTP──► MCP server(s) ──► your AI app
 ```
 
-- A single background **helper** holds one WhatsApp Web session (headless Chromium, like the WhatsApp Web you use in a browser). It listens on a fixed local port and **outlives app restarts**, so the session persists — you link once.
-- Your MCP client starts an **MCP server per chat/session**; each one is a thin client that forwards to that single helper. Open as many as you like — they all share one session, so there are no duplicate logins and no re-scanning.
-- **Your AI app is the brain.** No extra LLM API key needed — the app's own model does the reasoning.
+- A single background **helper** holds one WhatsApp Web session (headless Chromium, like the WhatsApp Web you use in a browser). It listens on a fixed local port and **outlives app restarts**, so the session persists, you link once.
+- Your MCP client starts an **MCP server per chat/session**; each one is a thin client that forwards to that single helper. Open as many as you like, they all share one session, so there are no duplicate logins and no re-scanning.
+- **Your AI app is the brain.** No extra LLM API key needed, the app's own model does the reasoning.
 
 ## Requirements
 
 - **Node.js 18+**
-- An **MCP client that can run local servers** — Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed, or your own agent. (The steps below use Claude Desktop; see [Works with any MCP client](#works-with-any-mcp-client) for the rest.)
+- An **MCP client that can run local servers**, Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed, or your own agent. (The steps below use Claude Desktop; see [Works with any MCP client](#works-with-any-mcp-client) for the rest.)
 - A WhatsApp account on your phone
 
 ## Install
@@ -53,7 +53,7 @@ npm install
 
 > First install downloads a Chromium for WhatsApp Web (~150 MB). One time only.
 
-**Add it to Claude Desktop.** Easiest — run the helper (it merges into your config and uses an absolute `node` path, which macOS GUI apps need):
+**Add it to Claude Desktop.** Easiest, run the helper (it merges into your config and uses an absolute `node` path, which macOS GUI apps need):
 
 ```bash
 node scripts/apply-to-claude-desktop.mjs
@@ -79,13 +79,13 @@ Or do it by hand. Open the config:
 
 **Restart Claude Desktop.**
 
-## First run — link your phone
+## First run, link your phone
 
 In Claude, say:
 
 > link my whatsapp
 
-A page opens with a QR code. On your phone: **WhatsApp → Settings → Linked Devices → Link a Device** → scan it. The page flips to **"Linked"** and the session is saved locally — you won't scan again.
+A page opens with a QR code. On your phone: **WhatsApp → Settings → Linked Devices → Link a Device** → scan it. The page flips to **"Linked"** and the session is saved locally, you won't scan again.
 
 ## Use it
 
@@ -97,9 +97,9 @@ or
 
 ## Works with any MCP client
 
-This is a standard **local MCP server** — not Claude-specific. Anything that can run a local (stdio) MCP server can use it: **Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed**, or your own agent built on an MCP SDK. The model in that app does the digest reasoning, so any capable model works.
+This is a standard **local MCP server**, not Claude-specific. Anything that can run a local (stdio) MCP server can use it: **Claude Desktop, Claude Code, Cursor, VS Code (Copilot), Windsurf, Cline, Zed**, or your own agent built on an MCP SDK. The model in that app does the digest reasoning, so any capable model works.
 
-Most clients use the same config shape — only the file location differs per app:
+Most clients use the same config shape, only the file location differs per app:
 
 ```json
 {
@@ -112,7 +112,7 @@ Most clients use the same config shape — only the file location differs per ap
 }
 ```
 
-You get the same five tools and the `whatsapp_digest` prompt. The one limit: a **cloud-only client that accepts only remote MCP servers won't work** — the WhatsApp session has to run locally on your machine.
+You get the same five tools and the `whatsapp_digest` prompt. The one limit: a **cloud-only client that accepts only remote MCP servers won't work**, the WhatsApp session has to run locally on your machine.
 
 ## The tools (all read-only)
 
@@ -128,11 +128,11 @@ The helper is self-healing: it clears stale browser locks on start (so a crash c
 
 There is also a built-in **`whatsapp_digest` prompt** and an optional **Skill** (`skill/SKILL.md`) that teach Claude how to format a good brief.
 
-## ⚠️ Safety & caveats — read this
+## ⚠️ Safety & caveats, read this
 
 - **Unofficial.** WhatsApp has no public API for this. `whatsapp-web.js` automates WhatsApp Web. Automating WhatsApp is **against WhatsApp's Terms of Service**.
 - **Ban risk.** Your number can be rate-limited or **banned**. Use a number you are comfortable risking. This project is read-only specifically to stay on the lower-risk side, but the risk is not zero.
-- **Privacy — your messages go to Claude when you ask for a digest.** This tool stores and uploads nothing on its own. But when Claude *reads* your messages to write the brief, that text is sent to Claude (Anthropic) like any other prompt. **Don't digest chats you wouldn't paste into Claude.**
+- **Privacy, your messages go to Claude when you ask for a digest.** This tool stores and uploads nothing on its own. But when Claude *reads* your messages to write the brief, that text is sent to Claude (Anthropic) like any other prompt. **Don't digest chats you wouldn't paste into Claude.**
 - **It can break.** When WhatsApp changes WhatsApp Web, `whatsapp-web.js` may stop working until it's updated. That's the nature of unofficial tooling.
 - **One session per number.** You can't run two WhatsApp Web automations on the same number at once.
 - **Not affiliated** with WhatsApp or Meta in any way.
@@ -156,7 +156,7 @@ Two things to know:
 
 ## Roadmap
 
-- **v2 — auto mode:** a small always-on background process (cron) that builds the digest every morning and sends it to your own WhatsApp number, even when Claude is closed. (Needs an Anthropic API key, since there's no human in the loop.)
+- **v2, auto mode:** a small always-on background process (cron) that builds the digest every morning and sends it to your own WhatsApp number, even when Claude is closed. (Needs an Anthropic API key, since there's no human in the loop.)
 - **One-click install:** package as a `.dxt` Desktop Extension so install becomes a double-click with no terminal. A current-format `manifest.json` is included.
 
 ## Changelog
@@ -165,4 +165,4 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute. Do what you like.
+[MIT](LICENSE), free to use, modify, and distribute. Do what you like.

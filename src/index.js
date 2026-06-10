@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// WhatsApp Digest — MCP server (thin client).
+// WhatsApp Digest, MCP server (thin client).
 // Claude Desktop spawns one of these PER CHAT. They must NOT each open their own
 // WhatsApp browser (only one process can hold the session). So instead, every
 // copy talks to a single shared background daemon on a fixed port, spawning it
@@ -108,7 +108,7 @@ server.registerTool(
   {
     title: 'WhatsApp status',
     description:
-      'Check whether WhatsApp is connected. If state is not "ready" but "linked" is true, the saved login is just reconnecting — wait a few seconds and call get_messages (it reconnects on its own). Do not reset or re-link in that case.',
+      'Check whether WhatsApp is connected. If state is not "ready" but "linked" is true, the saved login is just reconnecting, wait a few seconds and call get_messages (it reconnects on its own). Do not reset or re-link in that case.',
     inputSchema: {},
   },
   async () => ({ content: [{ type: 'text', text: await callDaemon('/status') }] })
@@ -119,7 +119,7 @@ server.registerTool(
   {
     title: 'Link WhatsApp',
     description:
-      'First-time setup only, or after the user logged the device out. Opens a local QR page. Only call this if get_messages explicitly says "not linked yet". If a saved login already exists, the tools reconnect on their own with no QR — do NOT call this just because the session looks idle or asleep.',
+      'First-time setup only, or after the user logged the device out. Opens a local QR page. Only call this if get_messages explicitly says "not linked yet". If a saved login already exists, the tools reconnect on their own with no QR, do NOT call this just because the session looks idle or asleep.',
     inputSchema: {},
   },
   async () => {

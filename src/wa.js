@@ -136,7 +136,7 @@ function cleanupProfile() {
       execFileSync('pkill', ['-f', PROFILE_DIR], { stdio: 'ignore' });
     }
   } catch {
-    /* pkill exits non-zero when nothing matches — fine */
+    /* pkill exits non-zero when nothing matches, fine */
   }
   for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
     try {
@@ -199,7 +199,7 @@ export function waitUntilReady(timeoutMs = 90000) {
   });
 }
 
-// Gentle gate: if already connected, proceed (we trust it — no probing, no
+// Gentle gate: if already connected, proceed (we trust it, no probing, no
 // teardown). If not, start/continue connecting (restores a saved login with NO
 // QR) and wait briefly. Only error out if it truly can't get ready.
 async function ensureReadyOrThrow() {
@@ -209,7 +209,7 @@ async function ensureReadyOrThrow() {
   if (ok) return;
   throw new Error(
     hasSavedSession()
-      ? 'WhatsApp is reconnecting (restoring your saved login). Wait a few seconds and call get_messages again — no reset or QR needed.'
+      ? 'WhatsApp is reconnecting (restoring your saved login). Wait a few seconds and call get_messages again, no reset or QR needed.'
       : 'WhatsApp is not linked yet. Run link_whatsapp, scan the QR once, then try again.'
   );
 }
@@ -331,14 +331,14 @@ export async function getMessages({
     };
   });
   const out = results.filter(Boolean);
-  console.error(`[wa] getMessages: done — ${out.length} chats with recent messages`);
+  console.error(`[wa] getMessages: done, ${out.length} chats with recent messages`);
   return out;
 }
 
 // Keyword search across the account. Scans chats active within the window,
 // keeps only messages whose text contains all of the query terms, and reports
 // how much it covered (a single tool call has a time budget, so on a big
-// account a search may be partial — the result says so honestly).
+// account a search may be partial, the result says so honestly).
 export async function searchMessages({ query, hours = 4320, maxChats = 200 } = {}) {
   await ensureReadyOrThrow();
   const q = (query || '').trim();

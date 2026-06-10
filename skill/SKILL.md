@@ -19,11 +19,11 @@ Call `whatsapp_status`. If `state` is not `"ready"`:
 
 1. Call `get_messages` (default last 24 hours). Optionally call `list_chats` to see unread counts.
 2. Sort into three buckets:
-   - **Needs a reply** — direct questions or asks pointed at the user that are still open.
-   - **Time-sensitive** — anything with a date, deadline, payment, or "today/tomorrow".
-   - **FYI** — useful context, no action needed.
+   - **Needs a reply**, direct questions or asks pointed at the user that are still open.
+   - **Time-sensitive**, anything with a date, deadline, payment, or "today/tomorrow".
+   - **FYI**, useful context, no action needed.
 3. One line per item: who it's from, the gist, and the action (if any). Quote sparingly.
-4. Put unread and most-active chats first. Skip noise — stickers, "ok", group spam.
+4. Put unread and most-active chats first. Skip noise, stickers, "ok", group spam.
 5. End with **Top 3 to handle today**.
 
 ## Style
