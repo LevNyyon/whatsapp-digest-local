@@ -101,7 +101,7 @@ function openBrowser(url) {
   } catch {}
 }
 
-const server = new McpServer({ name: 'whatsapp-digest', version: '0.1.2' });
+const server = new McpServer({ name: 'whatsapp-digest', version: '0.2.0' });
 
 server.registerTool(
   'whatsapp_status',

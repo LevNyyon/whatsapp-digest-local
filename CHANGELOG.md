@@ -2,6 +2,15 @@
 
 All notable changes to WhatsApp Digest are documented here.
 
+## [0.2.0] - 2026-06-09
+
+### Added
+- `search_messages` tool: search your WhatsApp account for a topic or keywords and get back only the messages that match (who said it, when, and which chat). Lets you ask your WhatsApp history questions in natural language. It reports how many chats it covered, so a partial search is clear and you can narrow.
+
+### Changed
+- Lookback window raised from 1 week to about 6 months. `get_messages` reads deeper for longer windows, and deepest when you target a single chat by name. The daily digest default stays 24 hours.
+- Large results are written to a JSON file and the response gives the path with an instruction to open and search it, so big multi-month pulls do not get truncated or lost.
+
 ## [0.1.2] - 2026-06-09
 
 ### Security
