@@ -1,8 +1,8 @@
 # WhatsApp Digest (local)
 
-A small, **local, read-only** assistant that turns your recent WhatsApp chats into a short, prioritized digest — inside Claude.
+A small, **local, read-only** assistant for your AI app. It turns your recent WhatsApp chats into a short, prioritized digest, and it lets you search your whole history in plain language.
 
-Ask Claude *"give me my WhatsApp digest"* and you get back: what needs a reply, what's time-sensitive, and what's just FYI — plus the top 3 things to handle today.
+Ask for a digest and you get back what needs a reply, what is time-sensitive, and what is just noise, plus the top few things to handle today. Or ask a question like *"where did I discuss the lease"* and it searches your chats and returns only the messages that matter.
 
 It runs entirely on your own machine. There is **no send function** in the code. It only reads.
 
@@ -10,23 +10,22 @@ It runs entirely on your own machine. There is **no send function** in the code.
 
 ## What it is
 
-WhatsApp Digest is an [MCP](https://modelcontextprotocol.io) server. It holds a WhatsApp Web session locally and exposes your recent messages to Claude as a few read-only tools. Claude does the thinking and writes the brief. You add it to Claude Desktop once, link your phone once, and then ask for a digest whenever you want.
+WhatsApp Digest is an [MCP](https://modelcontextprotocol.io) server. It holds a WhatsApp Web session locally and exposes your messages to your AI assistant as a few read-only tools. The assistant does the thinking: it writes the brief, or searches your history for whatever you ask about. You add it to your AI app once, link your phone once, and then ask.
 
-It is the open, minimal core of a much larger operator hub — given away free.
+It is the open, minimal core of a much larger operator hub, given away free.
 
 ## What it does
 
 - Links to your WhatsApp via a QR scan (like WhatsApp Web), then remembers the session.
-- Reads your **recent** chats and messages (default: last 24 hours).
-- Reports unread counts so you can see what needs attention.
-- Lets Claude group it all into a prioritized digest: **needs a reply / time-sensitive / FYI**.
+- Builds a prioritized digest of recent activity: **needs a reply / time-sensitive / FYI**, with unread counts.
+- **Searches your history in plain language** (up to about six months back) and returns only the messages that match a topic or person.
 
 ## What it does NOT do
 
 - **It never sends messages.** There is no send code path, by design.
 - **It is not a cloud service.** Nothing is hosted; there is no server you sign up for.
-- **It does not store or upload your messages.** This tool keeps no database. (See the privacy note below about Claude itself.)
-- **It does not read deep history.** It sees what WhatsApp Web has synced — great for recent activity, weak for old archives.
+- **It does not store or upload your messages.** This tool keeps no database. (See the privacy note below about your AI app itself.)
+- **It can only see what WhatsApp Web has synced** to your machine. Recent history is reliable; very old archives may not be there.
 
 ## How it works
 

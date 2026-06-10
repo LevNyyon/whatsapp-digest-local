@@ -3,8 +3,8 @@
   "name": "whatsapp-digest",
   "display_name": "WhatsApp Digest",
   "version": "0.2.0",
-  "description": "A local, read-only assistant that turns your recent WhatsApp chats into a prioritized digest inside Claude.",
-  "long_description": "Connects to your WhatsApp (via WhatsApp Web, running locally on your machine) and exposes your recent messages to Claude as read-only tools. Ask Claude for a digest and it returns a short, prioritized brief: what needs a reply, what's time-sensitive, and what's just FYI. Nothing is sent, and nothing leaves your machine except the message text you ask Claude to read.",
+  "description": "A local, read-only assistant that turns your WhatsApp into a prioritized digest and a searchable history for your AI app.",
+  "long_description": "Connects to your WhatsApp (via WhatsApp Web, running locally on your machine) and exposes your messages to your AI assistant as read-only tools. Ask for a digest and it returns a short, prioritized brief: what needs a reply, what is time-sensitive, and what is just noise. Or search your history in plain language and get back only the messages that match a topic or person. Nothing is sent, and nothing leaves your machine except the text your AI app reads.",
   "author": {
     "name": "Nyyon",
     "url": "https://github.com/LevNyyon/whatsapp-digest-local"
