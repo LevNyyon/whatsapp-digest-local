@@ -334,3 +334,77 @@ export async function getMessages({
   console.error(`[wa] getMessages: done — ${out.length} chats with recent messages`);
   return out;
 }
+
+// Keyword search across the account. Scans chats active within the window,
+// keeps only messages whose text contains all of the query terms, and reports
+// how much it covered (a single tool call has a time budget, so on a big
+// account a search may be partial — the result says so honestly).
+export async function searchMessages({ query, hours = 4320, maxChats = 200 } = {}) {
+  await ensureReadyOrThrow();
+  const q = (query || '').trim();
+  if (!q) {
+    throw new Error('search_messages needs a query (the topic or keywords to find).');
+  }
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const cutoff = Date.now() - hours * 3600 * 1000;
+
+  console.error(`[wa] search: "${q}" over ~${Math.round(hours / 24)}d`);
+  let chats = await withTimeout(client.getChats(), GET_CHATS_TIMEOUT, 'getChats');
+  chats.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const inWindow = chats.filter((c) => (c.timestamp || 0) * 1000 >= cutoff);
+  const target = inWindow.slice(0, maxChats);
+
+  const start = Date.now();
+  const BUDGET_MS = 35000; // keep the whole call comfortably under the tool timeout
+  const PER_CHAT = 200;
+  let scanned = 0;
+  const matches = [];
+
+  await mapLimit(target, 5, async (chat) => {
+    if (Date.now() - start > BUDGET_MS) return; // out of time, skip the rest
+    scanned++;
+    let msgs;
+    try {
+      msgs = await withTimeout(
+        chat.fetchMessages({ limit: PER_CHAT }),
+        8000,
+        `fetch(${chat.name || 'chat'})`
+      );
+    } catch {
+      return;
+    }
+    for (const m of msgs) {
+      if ((m.timestamp || 0) * 1000 < cutoff) continue;
+      const body = (m.body || '').toLowerCase();
+      if (!body) continue;
+      if (terms.every((t) => body.includes(t))) {
+        matches.push({
+          chat: chat.name || chat.id?.user || 'Unknown',
+          isGroup: !!chat.isGroup,
+          from: m.fromMe
+            ? 'me'
+            : m._data?.notifyName || m.author || m.from || 'unknown',
+          time: new Date((m.timestamp || 0) * 1000).toISOString(),
+          text: m.body,
+        });
+      }
+    }
+  });
+
+  matches.sort((a, b) => (a.time < b.time ? 1 : -1)); // newest first
+  const MAX_RETURN = 300;
+  console.error(
+    `[wa] search done: ${matches.length} matches in ${scanned}/${inWindow.length} chats`
+  );
+  return {
+    query: q,
+    windowDays: Math.round(hours / 24),
+    chatsScanned: scanned,
+    chatsActiveInWindow: inWindow.length,
+    coverageComplete: scanned >= inWindow.length,
+    perChatDepth: PER_CHAT,
+    matchCount: matches.length,
+    matchesTruncated: matches.length > MAX_RETURN,
+    matches: matches.slice(0, MAX_RETURN),
+  };
+}

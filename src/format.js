@@ -13,12 +13,14 @@ export function formatMessagesResult(jsonText) {
     return { content: [{ type: 'text', text: jsonText }] };
   }
 
-  let chats = 0;
-  let messages = 0;
+  let items = 0;
   try {
-    const arr = JSON.parse(jsonText);
-    chats = arr.length;
-    messages = arr.reduce((n, c) => n + (c.messages?.length || 0), 0);
+    const parsed = JSON.parse(jsonText);
+    if (Array.isArray(parsed)) {
+      items = parsed.reduce((n, c) => n + (c.messages?.length || 0), 0) || parsed.length;
+    } else if (parsed && Array.isArray(parsed.matches)) {
+      items = parsed.matches.length;
+    }
   } catch {
     /* keep going even if the count parse fails */
   }
@@ -33,12 +35,11 @@ export function formatMessagesResult(jsonText) {
     fs.writeFileSync(file, jsonText);
 
     const text =
-      `This result is large (${messages} messages across ${chats} chats), so the full data was written to a file instead of being inlined here:\n\n` +
+      `This result is large (${items} items), so the full data was written to a file instead of being inlined here:\n\n` +
       `${file}\n\n` +
-      `IMPORTANT: To answer the user, OPEN AND SEARCH THIS FILE. It is JSON: an array of ` +
-      `{ "chat", "isGroup", "unread", "messages": [ { "from", "body", "time" } ] }. ` +
+      `IMPORTANT: To answer the user, OPEN AND SEARCH THIS FILE. It is JSON (chats with messages, or search matches). ` +
       `Read it (or grep it) for the people, topics, or keywords the user asked about, then answer from what you find there. ` +
-      `Do NOT tell the user the data is too large or unavailable — it is all in that file.`;
+      `Do NOT tell the user the data is too large or unavailable; it is all in that file.`;
 
     return { content: [{ type: 'text', text }] };
   } catch {

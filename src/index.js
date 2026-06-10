@@ -175,6 +175,24 @@ server.registerTool(
 );
 
 server.registerTool(
+  'search_messages',
+  {
+    title: 'Search WhatsApp history',
+    description:
+      'Search the WhatsApp account for a topic or keywords and get back only the messages that match (who said it, when, and which chat). Use this to recall things from the user\'s WhatsApp memory, e.g. "find where I discussed the lease", "did anyone mention the offsite", "what did Dana say about pricing". Put the key words of the topic in `query` (every word must appear in a matching message). `hours` sets how far back to look (default about 6 months). The result reports chatsScanned vs chatsActiveInWindow and coverageComplete, so if it was partial, tell the user and offer to narrow to a specific chat or a shorter window. If results are large they are written to a file with a path to open and search.',
+    inputSchema: {
+      query: z.string(),
+      hours: z.number().int().min(1).max(4320).optional(),
+    },
+  },
+  async ({ query, hours }) => {
+    const qs = new URLSearchParams({ q: query });
+    if (hours) qs.set('hours', String(hours));
+    return formatMessagesResult(await callDaemon(`/search?${qs}`));
+  }
+);
+
+server.registerTool(
   'reset_whatsapp',
   {
     title: 'Reset WhatsApp helper',

@@ -14,6 +14,7 @@ import {
   getLastQr,
   listChats,
   getMessages,
+  searchMessages,
   resetClient,
 } from './wa.js';
 
@@ -137,6 +138,17 @@ const server = http.createServer(async (req, res) => {
           await getMessages({
             hours: Number(url.searchParams.get('hours') || 24),
             chatName: url.searchParams.get('chat') || null,
+          })
+        );
+      case '/search':
+        return sendJson(
+          res,
+          200,
+          await searchMessages({
+            query: url.searchParams.get('q') || '',
+            hours: url.searchParams.get('hours')
+              ? Number(url.searchParams.get('hours'))
+              : undefined,
           })
         );
       case '/reset':
