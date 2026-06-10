@@ -8,6 +8,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { formatMessagesResult } from './format.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -160,7 +161,7 @@ server.registerTool(
   {
     title: 'Get recent messages',
     description:
-      'Get WhatsApp messages from the last N hours (default 24). Optionally filter to one chat by name fragment. N can go up to 4320 (about 6 months) to search back through history; when looking for something specific in one conversation, pass that chat name so it reads deeper. Longer windows take longer and return more. This auto-reconnects a sleeping or idle session and waits, so you do not need to call reset_whatsapp or link_whatsapp first. If it returns a reconnecting message, just call get_messages again in a few seconds.',
+      'Get WhatsApp messages from the last N hours (default 24). Optionally filter to one chat by name fragment. N can go up to 4320 (about 6 months) to search back through history; when looking for something specific in one conversation, pass that chat name so it reads deeper. Longer windows take longer and return more. This auto-reconnects a sleeping or idle session and waits, so you do not need to call reset_whatsapp or link_whatsapp first. If it returns a reconnecting message, just call get_messages again in a few seconds. If the result is large it is written to a JSON file and the response gives you the path: open and search that file to find what the user asked for.',
     inputSchema: {
       hours: z.number().int().min(1).max(4320).optional(),
       chat: z.string().optional(),
@@ -169,7 +170,7 @@ server.registerTool(
   async ({ hours, chat }) => {
     const qs = new URLSearchParams({ hours: String(hours ?? 24) });
     if (chat) qs.set('chat', chat);
-    return { content: [{ type: 'text', text: await callDaemon(`/messages?${qs}`) }] };
+    return formatMessagesResult(await callDaemon(`/messages?${qs}`));
   }
 );
 
