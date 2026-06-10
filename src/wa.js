@@ -267,11 +267,20 @@ export async function listChats(limit = 30) {
 export async function getMessages({
   hours = 24,
   chatName = null,
-  maxChats = 15,
-  perChat = 20,
+  maxChats = 20,
 } = {}) {
   await ensureReadyOrThrow();
   const cutoff = Date.now() - hours * 3600 * 1000;
+
+  // fetchMessages only pulls the last N messages, so N has to grow with the
+  // window or a long lookback returns nothing older than the last 20. Go deep
+  // when searching a single conversation; stay shallower on a broad scan so the
+  // payload doesn't explode.
+  const days = hours / 24;
+  const perChat = chatName
+    ? Math.min(800, Math.max(40, Math.round(days * 50)))
+    : Math.min(150, Math.max(25, Math.round(days * 20)));
+  const fetchTimeout = Math.min(20000, 4000 + perChat * 25);
 
   console.error('[wa] getMessages: fetching chat list…');
   let chats = await withTimeout(client.getChats(), GET_CHATS_TIMEOUT, 'getChats');
@@ -295,7 +304,7 @@ export async function getMessages({
     try {
       msgs = await withTimeout(
         chat.fetchMessages({ limit: perChat }),
-        5000,
+        fetchTimeout,
         `fetchMessages(${chat.name || 'chat'})`
       );
     } catch (e) {

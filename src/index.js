@@ -160,9 +160,9 @@ server.registerTool(
   {
     title: 'Get recent messages',
     description:
-      'Get WhatsApp messages from the last N hours (default 24), optionally filtered to one chat by name fragment. The raw material for a digest. This AUTOMATICALLY reconnects a sleeping or idle session and waits for it — you do NOT need to call reset_whatsapp or link_whatsapp first. If it returns a "reconnecting" message, just call get_messages again in a few seconds.',
+      'Get WhatsApp messages from the last N hours (default 24). Optionally filter to one chat by name fragment. N can go up to 4320 (about 6 months) to search back through history; when looking for something specific in one conversation, pass that chat name so it reads deeper. Longer windows take longer and return more. This auto-reconnects a sleeping or idle session and waits, so you do not need to call reset_whatsapp or link_whatsapp first. If it returns a reconnecting message, just call get_messages again in a few seconds.',
     inputSchema: {
-      hours: z.number().int().min(1).max(168).optional(),
+      hours: z.number().int().min(1).max(4320).optional(),
       chat: z.string().optional(),
     },
   },
