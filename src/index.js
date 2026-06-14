@@ -9,18 +9,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { formatMessagesResult } from './format.js';
+import { callDaemon, killDaemon, BASE } from './daemon-control.js';
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const daemonPath = path.join(here, 'daemon.js');
-const PORT = Number(process.env.WA_DAEMON_PORT || 47291);
-const BASE = `http://localhost:${PORT}`;
-const LOG = path.join(os.tmpdir(), 'whatsapp-digest-daemon.log');
-const PIDFILE = path.join(os.tmpdir(), `whatsapp-digest-daemon.${PORT}.pid`);
 
 const DIGEST_INSTRUCTIONS = `You are this person's WhatsApp chief of staff. Build a short, prioritized digest of recent WhatsApp activity.
 
@@ -31,59 +21,6 @@ Steps:
 4. Unread / most-active chats first. Skip noise (stickers, "ok", group spam).
 5. End with "Top 3 to handle today".
 Keep it tight and skimmable. No preamble. If nothing important happened, say so.`;
-
-async function daemonHealthy() {
-  try {
-    const r = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(1500) });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
-
-// Make sure the shared daemon is running; spawn it detached if not.
-async function ensureDaemon() {
-  if (await daemonHealthy()) return;
-  const out = fs.openSync(LOG, 'a');
-  spawn(process.execPath, [daemonPath], {
-    detached: true,
-    stdio: ['ignore', out, out],
-    env: process.env,
-  }).unref();
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    if (await daemonHealthy()) return;
-  }
-  throw new Error(`WhatsApp helper did not start in time. See ${LOG}`);
-}
-
-async function callDaemon(pathname, opts) {
-  await ensureDaemon();
-  const r = await fetch(`${BASE}${pathname}`, opts);
-  const text = await r.text();
-  if (!r.ok) throw new Error(`helper ${pathname} failed: ${text}`);
-  return text; // JSON string, passed straight through to Claude
-}
-
-// Stop the helper: ask it to shut down, then hard-kill via the PID file if it's
-// wedged and still answering. Used by the reset tool to guarantee a fresh start.
-async function killDaemon() {
-  try {
-    await fetch(`${BASE}/shutdown`, { signal: AbortSignal.timeout(2000) });
-  } catch {}
-  try {
-    const pid = Number(fs.readFileSync(PIDFILE, 'utf8').trim());
-    if (pid) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {}
-    }
-  } catch {}
-  for (let i = 0; i < 12; i++) {
-    if (!(await daemonHealthy())) return;
-    await new Promise((r) => setTimeout(r, 300));
-  }
-}
 
 function openBrowser(url) {
   const cmd =

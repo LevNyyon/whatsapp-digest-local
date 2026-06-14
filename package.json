@@ -7,7 +7,8 @@
     "whatsapp-digest": "src/index.js"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node test/selfheal.mjs"
   },
   "license": "MIT",
   "engines": {

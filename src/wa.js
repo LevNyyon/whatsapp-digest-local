@@ -29,9 +29,22 @@ let readyWaiters = [];
 let lastOnQr = null; // remembered QR callback, reused on auto-reconnect
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let watchdogTimer = null;
+let recovering = false;
+// When the session last became NOT ready (null while ready). The watchdog reads
+// this to spot a session that is genuinely stuck and force a clean recovery.
+let notReadySince = Date.now();
+
+// How often the watchdog checks, and how long a session may sit not-ready before
+// it forces a recovery. The stuck window is deliberately generous so a normal
+// first-time sync is never interrupted. Both overridable for tests/ops.
+const WATCHDOG_INTERVAL_MS = Number(process.env.WA_WATCHDOG_INTERVAL_MS || 30000);
+const STUCK_MS = Number(process.env.WA_WATCHDOG_STUCK_MS || 120000);
 
 function setState(s) {
   state = s;
+  if (s === 'ready') notReadySince = null;
+  else if (notReadySince == null) notReadySince = Date.now();
 }
 
 export function getState() {
@@ -65,6 +78,7 @@ export function hasSavedSession() {
 // Lazily create and start the WhatsApp client. Safe to call repeatedly.
 export function ensureClient(onQr) {
   if (onQr) lastOnQr = onQr;
+  startWatchdog(); // self-heal backstop; idempotent
   if (client) return client;
   cleanupProfile();
   setState('loading');
@@ -145,16 +159,19 @@ function cleanupProfile() {
   }
 }
 
+// Backoff for auto-reconnect: ramps up, caps at 30s, and NEVER gives up (always
+// returns a finite delay) so a down session keeps trying to come back on its own.
+export function _reconnectDelay(attempts) {
+  return Math.min(30000, 2000 * 2 ** Math.min(attempts, 5));
+}
+
 // Reconnect ONLY in response to a real 'disconnected' event or an init failure
 // (never on a guess), with backoff. We never tear down a connection that is
-// actually up.
+// actually up. Unlike before, it does not give up after N tries: a steady 30s
+// retry beats a permanent dead end every time.
 function scheduleReconnect() {
   if (reconnectTimer) return;
-  if (reconnectAttempts >= 6) {
-    console.error('[wa] auto-reconnect gave up after 6 tries; use reset to retry');
-    return;
-  }
-  const delay = Math.min(30000, 2000 * 2 ** reconnectAttempts);
+  const delay = _reconnectDelay(reconnectAttempts);
   reconnectAttempts++;
   console.error(
     `[wa] auto-reconnect in ${Math.round(delay / 1000)}s (try ${reconnectAttempts})`
@@ -171,12 +188,65 @@ async function destroyClient() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  try {
-    await client?.destroy();
-  } catch {}
-  client = null;
+  const c = client;
+  client = null; // abandon it now so a fresh ensureClient can take over cleanly
   lastQr = null;
   setState('idle');
+  // A wedged client can hang on destroy(); time it out so recovery never stalls.
+  try {
+    if (c) await withTimeout(c.destroy(), 10000, 'destroy');
+  } catch {}
+}
+
+// Decide whether the watchdog should force a recovery. It acts ONLY on a session
+// that is genuinely stuck not-ready for too long. It NEVER touches a 'ready'
+// session (we never tear down a live connection, the one rule we never break),
+// never fights a human (qr/auth_failure need a person, not a restart), and never
+// double-fires while a reconnect is already scheduled.
+export function _watchdogShouldRecover({ state, notReadySince, reconnecting, now, stuckMs }) {
+  if (state === 'ready') return false;
+  if (state === 'qr' || state === 'auth_failure') return false;
+  if (reconnecting) return false;
+  if (!notReadySince) return false;
+  return now - notReadySince >= stuckMs;
+}
+
+// Backstop for the case scheduleReconnect cannot catch: the browser hangs on the
+// loading screen with no 'disconnected' event and no init error, so nothing ever
+// retries. The watchdog notices the session has been stuck and forces one clean
+// re-init, then keeps watching. A `recovering` guard stops it stacking recoveries
+// if a destroy runs long.
+function startWatchdog() {
+  if (watchdogTimer) return;
+  watchdogTimer = setInterval(async () => {
+    if (recovering) return;
+    if (
+      !_watchdogShouldRecover({
+        state,
+        notReadySince,
+        reconnecting: !!reconnectTimer,
+        now: Date.now(),
+        stuckMs: STUCK_MS,
+      })
+    )
+      return;
+    recovering = true;
+    try {
+      console.error(
+        `[wa] watchdog: stuck in "${state}" for ${Math.round((Date.now() - notReadySince) / 1000)}s, forcing clean recovery`
+      );
+      reconnectAttempts = 0;
+      await destroyClient();
+      cleanupProfile();
+      notReadySince = Date.now(); // give the fresh attempt its own grace window
+      ensureClient();
+    } catch (e) {
+      console.error('[wa] watchdog error:', e?.message || e);
+    } finally {
+      recovering = false;
+    }
+  }, WATCHDOG_INTERVAL_MS);
+  watchdogTimer.unref?.(); // never keep the process alive just for the watchdog
 }
 
 // Hard reset exposed to the MCP layer (the reset_whatsapp tool). Last resort.
