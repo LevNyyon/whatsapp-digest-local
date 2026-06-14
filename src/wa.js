@@ -31,15 +31,19 @@ let reconnectTimer = null;
 let reconnectAttempts = 0;
 let watchdogTimer = null;
 let recovering = false;
+let authed = false; // has 'authenticated' fired for the CURRENT connection attempt
 // When the session last became NOT ready (null while ready). The watchdog reads
 // this to spot a session that is genuinely stuck and force a clean recovery.
 let notReadySince = Date.now();
 
-// How often the watchdog checks, and how long a session may sit not-ready before
-// it forces a recovery. The stuck window is deliberately generous so a normal
-// first-time sync is never interrupted. Both overridable for tests/ops.
+// How often the watchdog checks. Recovery thresholds differ by phase: BEFORE
+// 'authenticated' a long hang means WhatsApp Web itself is stuck (e.g. a stale
+// pinned version), so recover fairly quickly. AFTER 'authenticated' the session
+// is just syncing, and a big account legitimately sits at 99% for minutes, so
+// give it a long leash and never interrupt a healthy sync. All overridable.
 const WATCHDOG_INTERVAL_MS = Number(process.env.WA_WATCHDOG_INTERVAL_MS || 30000);
-const STUCK_MS = Number(process.env.WA_WATCHDOG_STUCK_MS || 120000);
+const PRE_AUTH_STUCK_MS = Number(process.env.WA_WATCHDOG_PRE_AUTH_MS || 120000);
+const POST_AUTH_STUCK_MS = Number(process.env.WA_WATCHDOG_POST_AUTH_MS || 600000);
 
 function setState(s) {
   state = s;
@@ -107,6 +111,7 @@ export function ensureClient(onQr) {
   });
   client.on('authenticated', () => {
     console.error('[wa] authenticated');
+    authed = true; // creds accepted; from here a long 'loading' is just syncing
     writeMarker(); // we have a usable login now
     setState('loading');
   });
@@ -191,6 +196,7 @@ async function destroyClient() {
   const c = client;
   client = null; // abandon it now so a fresh ensureClient can take over cleanly
   lastQr = null;
+  authed = false; // next attempt must re-authenticate before it counts as authed
   setState('idle');
   // A wedged client can hang on destroy(); time it out so recovery never stalls.
   try {
@@ -203,11 +209,14 @@ async function destroyClient() {
 // session (we never tear down a live connection, the one rule we never break),
 // never fights a human (qr/auth_failure need a person, not a restart), and never
 // double-fires while a reconnect is already scheduled.
-export function _watchdogShouldRecover({ state, notReadySince, reconnecting, now, stuckMs }) {
+export function _watchdogShouldRecover({ state, notReadySince, authed, reconnecting, now, preAuthMs, postAuthMs }) {
   if (state === 'ready') return false;
   if (state === 'qr' || state === 'auth_failure') return false;
   if (reconnecting) return false;
   if (!notReadySince) return false;
+  // Long leash once authenticated (a big account is just slowly syncing);
+  // shorter leash before auth (a hang there means WhatsApp Web itself is stuck).
+  const stuckMs = authed ? postAuthMs : preAuthMs;
   return now - notReadySince >= stuckMs;
 }
 
@@ -224,16 +233,18 @@ function startWatchdog() {
       !_watchdogShouldRecover({
         state,
         notReadySince,
+        authed,
         reconnecting: !!reconnectTimer,
         now: Date.now(),
-        stuckMs: STUCK_MS,
+        preAuthMs: PRE_AUTH_STUCK_MS,
+        postAuthMs: POST_AUTH_STUCK_MS,
       })
     )
       return;
     recovering = true;
     try {
       console.error(
-        `[wa] watchdog: stuck in "${state}" for ${Math.round((Date.now() - notReadySince) / 1000)}s, forcing clean recovery`
+        `[wa] watchdog: stuck in "${state}" (${authed ? 'post' : 'pre'}-auth) for ${Math.round((Date.now() - notReadySince) / 1000)}s, forcing clean recovery`
       );
       reconnectAttempts = 0;
       await destroyClient();

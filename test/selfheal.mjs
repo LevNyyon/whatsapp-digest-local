@@ -33,15 +33,16 @@ ok('backoff NEVER gives up (finite forever)', wa._reconnectDelay(100000) === 300
 // ---- watchdog decision: safety first, then recovery ----
 const W = wa._watchdogShouldRecover;
 const now = 1_000_000;
-const base = { reconnecting: false, now, stuckMs: 120000 };
-ok('NEVER touches a ready session', W({ ...base, state: 'ready', notReadySince: now - 999999 }) === false);
-ok('waits on qr (human needed)', W({ ...base, state: 'qr', notReadySince: now - 999999 }) === false);
-ok('waits on auth_failure (human needed)', W({ ...base, state: 'auth_failure', notReadySince: now - 999999 }) === false);
-ok('defers while a reconnect is scheduled', W({ ...base, reconnecting: true, state: 'idle', notReadySince: now - 999999 }) === false);
-ok('ignores a not-yet-stuck loading', W({ ...base, state: 'loading', notReadySince: now - 10000 }) === false);
-ok('RECOVERS a long-stuck loading', W({ ...base, state: 'loading', notReadySince: now - 130000 }) === true);
-ok('RECOVERS a long-stuck idle', W({ ...base, state: 'idle', notReadySince: now - 200000 }) === true);
-ok('no-op when notReadySince is null', W({ ...base, state: 'idle', notReadySince: null }) === false);
+const base = { reconnecting: false, now, preAuthMs: 120000, postAuthMs: 600000 };
+ok('NEVER touches a ready session', W({ ...base, authed: true, state: 'ready', notReadySince: now - 999999 }) === false);
+ok('waits on qr (human needed)', W({ ...base, authed: false, state: 'qr', notReadySince: now - 999999 }) === false);
+ok('waits on auth_failure (human needed)', W({ ...base, authed: false, state: 'auth_failure', notReadySince: now - 999999 }) === false);
+ok('defers while a reconnect is scheduled', W({ ...base, authed: false, reconnecting: true, state: 'idle', notReadySince: now - 999999 }) === false);
+ok('pre-auth: ignores a not-yet-stuck loading', W({ ...base, authed: false, state: 'loading', notReadySince: now - 10000 }) === false);
+ok('pre-auth: RECOVERS a stuck WhatsApp-Web load (>2min)', W({ ...base, authed: false, state: 'loading', notReadySince: now - 130000 }) === true);
+ok('post-auth: does NOT interrupt a slow sync (the big-account regression)', W({ ...base, authed: true, state: 'loading', notReadySince: now - 130000 }) === false);
+ok('post-auth: RECOVERS a truly frozen sync (>10min)', W({ ...base, authed: true, state: 'loading', notReadySince: now - 610000 }) === true);
+ok('no-op when notReadySince is null', W({ ...base, authed: false, state: 'idle', notReadySince: null }) === false);
 
 // ---- reset frees a wedged, pidfile-less daemon (the exact dead-end) ----
 const child = spawn(process.execPath, ['-e',
